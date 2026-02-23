@@ -1,0 +1,30 @@
+# Entornos virtuales
+venv/
+env/
+*.env
+
+# Dependencias de Node
+node_modules/
+package-lock.json
+
+# Archivos de base de datos
+*.sqlite3
+*.db
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+
+# Archivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
