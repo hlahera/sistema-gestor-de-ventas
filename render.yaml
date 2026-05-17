@@ -48,7 +48,6 @@ services:
   - type: web
     name: producmarket-web
     runtime: static
-    plan: free
     rootDir: producmarket-frontend-cra
     buildCommand: chmod +x build.sh && ./build.sh
     staticPublishPath: build
