@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Box,
   Button,
-  Paper,
   Table,
   TableBody,
   TableCell,
@@ -26,14 +25,19 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import {
   getVendedores,
-  getVendedor,
   createVendedor,
   updateVendedor,
   deleteVendedor,
   type Vendedor,
 } from '../api/client';
+import { PageHeader } from '../components/ui/PageHeader';
+import { DataCard } from '../components/ui/DataCard';
+import { ResponsiveTableWrap } from '../components/ui/ResponsiveTableWrap';
+import { hideOnMobile, hideOnTablet, pageContentSx } from '../styles/responsive';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const VendedoresList: React.FC = () => {
+  const isMobile = useIsMobile();
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -46,7 +50,7 @@ const VendedoresList: React.FC = () => {
     password: '',
     first_name: '',
     last_name: '',
-    email: '',
+    telefono: '',
     is_active: true,
   });
 
@@ -69,7 +73,7 @@ const VendedoresList: React.FC = () => {
 
   const handleOpen = () => {
     setEditingId(null);
-    setForm({ username: '', password: '', first_name: '', last_name: '', email: '', is_active: true });
+    setForm({ username: '', password: '', first_name: '', last_name: '', telefono: '', is_active: true });
     setError(null);
     setSuccess(null);
     setOpen(true);
@@ -82,7 +86,7 @@ const VendedoresList: React.FC = () => {
       password: '',
       first_name: v.first_name || '',
       last_name: v.last_name || '',
-      email: v.email || '',
+      telefono: v.telefono || '',
       is_active: v.is_active,
     });
     setError(null);
@@ -108,7 +112,7 @@ const VendedoresList: React.FC = () => {
       updateVendedor(editingId, {
         first_name: form.first_name.trim() || undefined,
         last_name: form.last_name.trim() || undefined,
-        email: form.email.trim() || undefined,
+        telefono: form.telefono.trim() || undefined,
         is_active: form.is_active,
         password: form.password.trim() || undefined,
       })
@@ -134,11 +138,11 @@ const VendedoresList: React.FC = () => {
         password: form.password,
         first_name: form.first_name.trim() || undefined,
         last_name: form.last_name.trim() || undefined,
-        email: form.email.trim() || undefined,
+        telefono: form.telefono.trim() || undefined,
       })
         .then(() => {
           setSuccess('Vendedor creado correctamente. Ya puede iniciar sesión con ese usuario y contraseña.');
-          setForm({ username: '', password: '', first_name: '', last_name: '', email: '', is_active: true });
+          setForm({ username: '', password: '', first_name: '', last_name: '', telefono: '', is_active: true });
           load();
         })
         .catch((err) => {
@@ -162,18 +166,21 @@ const VendedoresList: React.FC = () => {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Box>
-          <Typography variant="h5">Vendedores</Typography>
-          <Typography variant="body2" color="textSecondary">
-            Crea cuentas de vendedor para que puedan reportar ventas e ingresar al sistema.
-          </Typography>
-        </Box>
-        <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleOpen}>
-          Crear vendedor
-        </Button>
-      </Box>
+    <Box sx={pageContentSx}>
+      <PageHeader
+        title="Vendedores"
+        subtitle="Crea cuentas para que reporten ventas e ingresen al sistema."
+        action={
+          <Button
+            variant="contained"
+            startIcon={<PersonAddIcon />}
+            onClick={handleOpen}
+            sx={{ width: { xs: '100%', sm: 'auto' } }}
+          >
+            Crear vendedor
+          </Button>
+        }
+      />
 
       {success && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
@@ -181,16 +188,18 @@ const VendedoresList: React.FC = () => {
         </Alert>
       )}
 
-      <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+      <DataCard noPadding>
+      <ResponsiveTableWrap>
+      <TableContainer>
         <Table size="small">
           <TableHead>
             <TableRow>
               <TableCell>Usuario</TableCell>
-              <TableCell>Nombre</TableCell>
-              <TableCell>Apellido</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Activo</TableCell>
-              <TableCell>Fecha de alta</TableCell>
+              <TableCell sx={hideOnMobile}>Nombre</TableCell>
+              <TableCell sx={hideOnTablet}>Apellido</TableCell>
+              <TableCell sx={hideOnTablet}>Teléfono</TableCell>
+              <TableCell sx={hideOnMobile}>Activo</TableCell>
+              <TableCell sx={hideOnMobile}>Alta</TableCell>
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
@@ -207,13 +216,18 @@ const VendedoresList: React.FC = () => {
               </TableRow>
             ) : (
               vendedores.map((v) => (
-                <TableRow key={v.id}>
-                  <TableCell>{v.username}</TableCell>
-                  <TableCell>{v.first_name || '—'}</TableCell>
-                  <TableCell>{v.last_name || '—'}</TableCell>
-                  <TableCell>{v.email || '—'}</TableCell>
-                  <TableCell>{v.is_active ? 'Sí' : 'No'}</TableCell>
-                  <TableCell>{new Date(v.date_joined).toLocaleDateString('es-CL')}</TableCell>
+                <TableRow key={v.id} hover>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={600}>{v.username}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: { sm: 'none' } }}>
+                      {[v.first_name, v.last_name].filter(Boolean).join(' ') || '—'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell sx={hideOnMobile}>{v.first_name || '—'}</TableCell>
+                  <TableCell sx={hideOnTablet}>{v.last_name || '—'}</TableCell>
+                  <TableCell sx={hideOnTablet}>{v.telefono || '—'}</TableCell>
+                  <TableCell sx={hideOnMobile}>{v.is_active ? 'Sí' : 'No'}</TableCell>
+                  <TableCell sx={hideOnMobile}>{new Date(v.date_joined).toLocaleDateString('es-CL')}</TableCell>
                   <TableCell align="right">
                     <IconButton size="small" onClick={() => handleEdit(v)} title="Editar">
                       <EditIcon />
@@ -228,8 +242,17 @@ const VendedoresList: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+      </ResponsiveTableWrap>
+      </DataCard>
 
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+      <Dialog
+        open={open}
+        onClose={handleClose}
+        maxWidth="sm"
+        fullWidth
+        fullScreen={isMobile}
+        scroll="paper"
+      >
         <DialogTitle>{isEdit ? 'Editar vendedor' : 'Crear vendedor'}</DialogTitle>
         <form onSubmit={handleSubmit}>
           <DialogContent>
@@ -276,11 +299,13 @@ const VendedoresList: React.FC = () => {
             />
             <TextField
               margin="dense"
-              label="Email"
-              type="email"
+              label="Teléfono"
+              type="tel"
               fullWidth
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              value={form.telefono}
+              onChange={(e) => setForm((f) => ({ ...f, telefono: e.target.value }))}
+              placeholder="Ej. +56 9 1234 5678"
+              inputProps={{ inputMode: 'tel', autoComplete: 'tel' }}
             />
             {isEdit && (
               <FormControlLabel
@@ -295,16 +320,16 @@ const VendedoresList: React.FC = () => {
               />
             )}
           </DialogContent>
-          <DialogActions>
-            <Button onClick={handleClose}>Cancelar</Button>
-            <Button type="submit" variant="contained" startIcon={isEdit ? <EditIcon /> : <AddIcon />}>
+          <DialogActions sx={{ flexDirection: { xs: 'column-reverse', sm: 'row' }, px: 2, pb: 2, gap: 1 }}>
+            <Button onClick={handleClose} fullWidth sx={{ m: 0 }}>Cancelar</Button>
+            <Button type="submit" variant="contained" fullWidth sx={{ m: 0 }} startIcon={isEdit ? <EditIcon /> : <AddIcon />}>
               {isEdit ? 'Guardar' : 'Crear'}
             </Button>
           </DialogActions>
         </form>
       </Dialog>
 
-      <Dialog open={deleteId !== null} onClose={() => setDeleteId(null)}>
+      <Dialog open={deleteId !== null} onClose={() => setDeleteId(null)} fullWidth maxWidth="xs" fullScreen={isMobile}>
         <DialogTitle>Eliminar vendedor</DialogTitle>
         <DialogContent>
           <Typography>

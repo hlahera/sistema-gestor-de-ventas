@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -10,17 +10,19 @@ import {
   TableHead,
   TableRow,
   Typography,
-  Chip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
   Alert,
+  Stack,
+  IconButton,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import CloseIcon from '@mui/icons-material/Close';
 import {
   getReportes,
   getReporte,
@@ -28,8 +30,47 @@ import {
   rechazarReporte,
   type ReporteVenta,
 } from '../api/client';
+import { PageHeader } from '../components/ui/PageHeader';
+import { DataCard } from '../components/ui/DataCard';
+import { ResponsiveTableWrap } from '../components/ui/ResponsiveTableWrap';
+import { hideOnMobile } from '../styles/responsive';
+import { pageContentSx } from '../styles/responsive';
+import { useIsMobile } from '../hooks/useIsMobile';
+
+const formatoPeso = (n: number) =>
+  new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(n);
+
+/** Una fila por producto: si el reporte trae varias líneas del mismo producto, se suman las cantidades. */
+function agruparLineasPorProducto(lineas: ReporteVenta['lineas']) {
+  const map = new Map<
+    number,
+    {
+      producto: number;
+      producto_codigo: string;
+      producto_nombre: string;
+      cantidad: number;
+      precio_venta?: string;
+    }
+  >();
+  for (const l of lineas) {
+    const prev = map.get(l.producto);
+    if (prev) {
+      prev.cantidad += l.cantidad;
+    } else {
+      map.set(l.producto, {
+        producto: l.producto,
+        producto_codigo: l.producto_codigo,
+        producto_nombre: l.producto_nombre,
+        cantidad: l.cantidad,
+        precio_venta: l.precio_venta,
+      });
+    }
+  }
+  return Array.from(map.values());
+}
 
 const ReportesList: React.FC = () => {
+  const isMobile = useIsMobile();
   const [reportes, setReportes] = useState<ReporteVenta[]>([]);
   const [loading, setLoading] = useState(true);
   const [detalle, setDetalle] = useState<ReporteVenta | null>(null);
@@ -86,14 +127,26 @@ const ReportesList: React.FC = () => {
     setRechazarOpen(true);
   };
 
+  const lineasDetalleAgrupadas = useMemo(() => {
+    if (!detalle?.lineas?.length) return [];
+    return agruparLineasPorProducto(detalle.lineas);
+  }, [detalle]);
+
+  const totalDetalleReporte = useMemo(
+    () =>
+      lineasDetalleAgrupadas.reduce(
+        (sum, l) => sum + l.cantidad * Number(l.precio_venta ?? 0),
+        0
+      ),
+    [lineasDetalleAgrupadas]
+  );
+
   return (
-    <Box>
-      <Typography variant="h5" gutterBottom>
-        Reportes de ventas
-      </Typography>
-      <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-        Reportes enviados por vendedores, pendientes de revisión y aprobación. Al aprobar, se registrarán las salidas en el inventario.
-      </Typography>
+    <Box sx={pageContentSx}>
+      <PageHeader
+        title="Reportes de ventas"
+        subtitle="Pendientes de revisión. Al aprobar, se registran las salidas en inventario."
+      />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
@@ -101,13 +154,15 @@ const ReportesList: React.FC = () => {
         </Alert>
       )}
 
-      <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+      <DataCard title="Pendientes" noPadding>
+      <ResponsiveTableWrap>
+      <TableContainer>
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Fecha reportada</TableCell>
+              <TableCell>Fecha</TableCell>
               <TableCell>Vendedor</TableCell>
-              <TableCell>Enviado</TableCell>
+              <TableCell sx={hideOnMobile}>Enviado</TableCell>
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
@@ -125,35 +180,53 @@ const ReportesList: React.FC = () => {
             ) : (
               reportes.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell>{r.fecha}</TableCell>
-                  <TableCell>{r.vendedor_username}</TableCell>
-                  <TableCell>{new Date(r.creado_en).toLocaleString('es-CL')}</TableCell>
-                  <TableCell align="right">
-                    <Button
-                      size="small"
-                      startIcon={<VisibilityIcon />}
-                      onClick={() => openDetalle(r.id)}
+                  <TableCell>
+                    <Box component="span" sx={{ fontWeight: 600 }}>{r.fecha}</Box>
+                    <Box
+                      component="span"
+                      sx={{ display: { xs: 'block', sm: 'none' }, fontSize: '0.75rem', color: 'text.secondary' }}
                     >
-                      Ver
-                    </Button>
-                    <Button
-                      size="small"
-                      color="success"
-                      startIcon={<CheckCircleIcon />}
-                      onClick={() => handleAprobar(r.id)}
-                      sx={{ ml: 1 }}
+                      {r.vendedor_username}
+                    </Box>
+                  </TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{r.vendedor_username}</TableCell>
+                  <TableCell sx={hideOnMobile}>
+                    {new Date(r.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}
+                  </TableCell>
+                  <TableCell align="right" sx={{ verticalAlign: 'top', minWidth: { xs: 120, sm: 'auto' } }}>
+                    <Stack
+                      direction="column"
+                      spacing={0.75}
+                      alignItems="stretch"
+                      sx={{ minWidth: { xs: 100, sm: 'auto' } }}
                     >
-                      Aprobar
-                    </Button>
-                    <Button
-                      size="small"
-                      color="error"
-                      startIcon={<CancelIcon />}
-                      onClick={() => openRechazar(r)}
-                      sx={{ ml: 1 }}
-                    >
-                      Rechazar
-                    </Button>
+                      <Button
+                        size="small"
+                        startIcon={<VisibilityIcon />}
+                        onClick={() => openDetalle(r.id)}
+                        fullWidth
+                      >
+                        Ver
+                      </Button>
+                      <Button
+                        size="small"
+                        color="success"
+                        startIcon={<CheckCircleIcon />}
+                        onClick={() => handleAprobar(r.id)}
+                        fullWidth
+                      >
+                        Aprobar
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<CancelIcon />}
+                        onClick={() => openRechazar(r)}
+                        fullWidth
+                      >
+                        Rechazar
+                      </Button>
+                    </Stack>
                   </TableCell>
                 </TableRow>
               ))
@@ -161,39 +234,85 @@ const ReportesList: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+      </ResponsiveTableWrap>
+      </DataCard>
 
-      <Dialog open={!!detalle && !rechazarOpen} onClose={() => setDetalle(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Detalle del reporte</DialogTitle>
+      <Dialog
+        open={!!detalle && !rechazarOpen}
+        onClose={() => setDetalle(null)}
+        maxWidth="sm"
+        fullWidth
+        fullScreen={isMobile}
+        scroll="paper"
+      >
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+            pr: 1,
+          }}
+        >
+          <Typography component="span" variant="h6">
+            Detalle del reporte
+          </Typography>
+          <IconButton
+            aria-label="Cerrar"
+            onClick={() => setDetalle(null)}
+            edge="end"
+            size="small"
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
         <DialogContent>
           {detalle && (
             <Box>
               <Typography variant="body2" color="textSecondary">
                 Fecha: {detalle.fecha} · Vendedor: {detalle.vendedor_username}
               </Typography>
+              <ResponsiveTableWrap>
               <TableContainer sx={{ mt: 2 }}>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
                       <TableCell>Producto</TableCell>
+                      <TableCell align="right">P. unitario</TableCell>
                       <TableCell align="right">Cantidad</TableCell>
+                      <TableCell align="right">Subtotal</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {detalle.lineas.map((l) => (
-                      <TableRow key={l.id}>
-                        <TableCell>{l.producto_codigo} – {l.producto_nombre}</TableCell>
-                        <TableCell align="right">{l.cantidad}</TableCell>
-                      </TableRow>
-                    ))}
+                    {lineasDetalleAgrupadas.map((l) => {
+                      const pu = Number(l.precio_venta ?? 0);
+                      const sub = l.cantidad * pu;
+                      return (
+                        <TableRow key={l.producto}>
+                          <TableCell>{l.producto_codigo} – {l.producto_nombre}</TableCell>
+                          <TableCell align="right">{formatoPeso(pu)}</TableCell>
+                          <TableCell align="right">{l.cantidad}</TableCell>
+                          <TableCell align="right">{formatoPeso(sub)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </TableContainer>
-              <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+              </ResponsiveTableWrap>
+              <Paper variant="outlined" sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover' }}>
+                <Typography variant="h6" component="p">
+                  {formatoPeso(totalDetalleReporte)}
+                </Typography>
+              </Paper>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 2 }}>
                 <Button
                   variant="contained"
                   color="success"
                   startIcon={<CheckCircleIcon />}
                   onClick={() => detalle && handleAprobar(detalle.id)}
+                  fullWidth
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
                 >
                   Aprobar
                 </Button>
@@ -202,16 +321,24 @@ const ReportesList: React.FC = () => {
                   color="error"
                   startIcon={<CancelIcon />}
                   onClick={() => detalle && openRechazar(detalle)}
+                  fullWidth
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
                 >
                   Rechazar
                 </Button>
-              </Box>
+              </Stack>
             </Box>
           )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={rechazarOpen} onClose={() => { setRechazarOpen(false); setDetalle(null); }}>
+      <Dialog
+        open={rechazarOpen}
+        onClose={() => { setRechazarOpen(false); setDetalle(null); }}
+        fullScreen={isMobile}
+        fullWidth
+        maxWidth="xs"
+      >
         <DialogTitle>Rechazar reporte</DialogTitle>
         <DialogContent>
           <TextField

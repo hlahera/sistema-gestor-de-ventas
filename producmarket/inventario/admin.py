@@ -26,9 +26,9 @@ class UserAdminConPerfil(BaseUserAdmin):
 
 @admin.register(PerfilUsuario)
 class PerfilUsuarioAdmin(admin.ModelAdmin):
-    list_display = ['user', 'tipo']
+    list_display = ['user', 'tipo', 'telefono']
     list_filter = ['tipo']
-    search_fields = ['user__username', 'user__email']
+    search_fields = ['user__username', 'user__email', 'telefono']
     raw_id_fields = ['user']
 
 
@@ -50,7 +50,7 @@ class ProductoAdmin(admin.ModelAdmin):
 
 @admin.register(MovimientoInventario)
 class MovimientoInventarioAdmin(admin.ModelAdmin):
-    list_display = ['producto', 'tipo', 'cantidad', 'responsable', 'motivo', 'fecha']
+    list_display = ['producto', 'tipo', 'cantidad', 'responsable', 'creado_por', 'motivo', 'fecha']
     list_filter = ['tipo', 'fecha']
 
 

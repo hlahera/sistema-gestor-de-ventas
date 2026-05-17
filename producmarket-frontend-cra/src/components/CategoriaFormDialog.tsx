@@ -6,6 +6,8 @@ import {
   DialogActions,
   Button,
   TextField,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { getCategoria, createCategoria, updateCategoria } from '../api/client';
 
@@ -16,6 +18,8 @@ interface Props {
 }
 
 const CategoriaFormDialog: React.FC<Props> = ({ open, onClose, editingId }) => {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [nombre, setNombre] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [saving, setSaving] = useState(false);
@@ -50,7 +54,7 @@ const CategoriaFormDialog: React.FC<Props> = ({ open, onClose, editingId }) => {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth fullScreen={fullScreen} scroll="paper">
       <DialogTitle>{editing ? 'Editar categoría' : 'Nueva categoría'}</DialogTitle>
       <form onSubmit={handleSubmit}>
         <DialogContent>

@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
-  Paper,
   Table,
   TableBody,
   TableCell,
@@ -18,17 +17,22 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
-import CategoryIcon from '@mui/icons-material/Category';
 import SearchIcon from '@mui/icons-material/Search';
 import { getProductosOffline, getCategoriasOffline, getImagenProductoUrl } from '../api/offlineApi';
-import { deleteProducto } from '../api/client';
+import { deleteProducto, getStoredUser } from '../api/client';
 import type { Producto as ProductoType } from '../types';
 import type { Categoria as CategoriaType } from '../types';
+import { PageHeader } from '../components/ui/PageHeader';
+import { DataCard } from '../components/ui/DataCard';
+import { ResponsiveTableWrap } from '../components/ui/ResponsiveTableWrap';
+import { hideOnMobile, hideOnTablet, pageContentSx } from '../styles/responsive';
 
 const DEBOUNCE_MS = 400;
 
 const ProductosList: React.FC = () => {
   const navigate = useNavigate();
+  const user = getStoredUser();
+  const isAdmin = user?.tipo === 'admin';
   const [productos, setProductos] = useState<ProductoType[]>([]);
   const [categorias, setCategorias] = useState<CategoriaType[]>([]);
   const [categoriaFiltro, setCategoriaFiltro] = useState<string>('');
@@ -36,24 +40,23 @@ const ProductosList: React.FC = () => {
   const [busqueda, setBusqueda] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const load = () => {
+  const load = useCallback(() => {
     const params: { categoria?: number; search?: string } = {};
     if (categoriaFiltro) params.categoria = Number(categoriaFiltro);
     if (busqueda.trim()) params.search = busqueda.trim();
     getProductosOffline(params)
       .then((res) => setProductos(res.data as ProductoType[]))
       .finally(() => setLoading(false));
-  };
+  }, [categoriaFiltro, busqueda]);
 
   useEffect(() => {
     getCategoriasOffline().then((res) => setCategorias(res.data as CategoriaType[]));
   }, []);
 
   useEffect(() => {
-    const handler = () => load();
-    window.addEventListener('producmarket-synced', handler);
-    return () => window.removeEventListener('producmarket-synced', handler);
-  }, [categoriaFiltro, busqueda]);
+    window.addEventListener('producmarket-synced', load);
+    return () => window.removeEventListener('producmarket-synced', load);
+  }, [load]);
 
   useEffect(() => {
     const t = window.setTimeout(() => setBusqueda(busquedaInput), DEBOUNCE_MS);
@@ -62,7 +65,7 @@ const ProductosList: React.FC = () => {
 
   useEffect(() => {
     load();
-  }, [categoriaFiltro, busqueda]);
+  }, [load]);
 
   const handleDelete = (id: number, nombre: string) => {
     if (window.confirm(`¿Eliminar producto "${nombre}"?`)) {
@@ -71,24 +74,38 @@ const ProductosList: React.FC = () => {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h5">Productos</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => navigate('/productos/nuevo')}
-        >
-          Nuevo producto
-        </Button>
-      </Box>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, mb: 2 }}>
+    <Box sx={pageContentSx}>
+      <PageHeader
+        title="Productos"
+        subtitle="Catálogo de inventario con búsqueda por código, nombre o categoría."
+        action={
+          isAdmin ? (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => navigate('/productos/nuevo')}
+              sx={{ width: { xs: '100%', sm: 'auto' } }}
+            >
+              Nuevo producto
+            </Button>
+          ) : undefined
+        }
+      />
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: { xs: 'stretch', sm: 'center' },
+          gap: 2,
+          mb: 2,
+        }}
+      >
         <TextField
           size="small"
           placeholder="Buscar por nombre, código o categoría..."
           value={busquedaInput}
           onChange={(e) => setBusquedaInput(e.target.value)}
-          sx={{ minWidth: 280 }}
+          sx={{ width: { xs: '100%', sm: 360 }, maxWidth: '100%' }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -97,7 +114,16 @@ const ProductosList: React.FC = () => {
             ),
           }}
         />
-        <Box component="label" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box
+          component="label"
+          sx={{
+            display: 'flex',
+            alignItems: { xs: 'stretch', sm: 'center' },
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 1,
+            width: { xs: '100%', sm: 'auto' },
+          }}
+        >
           <Typography variant="body2" color="textSecondary">Categoría:</Typography>
           <Box
             component="select"
@@ -106,7 +132,7 @@ const ProductosList: React.FC = () => {
               setCategoriaFiltro(e.target.value)
             }
             sx={{
-              minWidth: 200,
+              width: { xs: '100%', sm: 240 },
               py: 0.75,
               px: 1.5,
               fontSize: 14,
@@ -126,29 +152,31 @@ const ProductosList: React.FC = () => {
           </Box>
         </Box>
       </Box>
-      <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-        <Table>
+      <DataCard noPadding>
+      <ResponsiveTableWrap>
+      <TableContainer>
+        <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Imagen</TableCell>
+              <TableCell sx={hideOnMobile}>Imagen</TableCell>
               <TableCell>Código SKU</TableCell>
               <TableCell>Nombre</TableCell>
-              <TableCell>Categoría</TableCell>
+              <TableCell sx={hideOnTablet}>Categoría</TableCell>
               <TableCell align="right">Precio</TableCell>
               <TableCell align="right">Stock</TableCell>
-              <TableCell align="right">Mín.</TableCell>
-              <TableCell>Estado</TableCell>
-              <TableCell align="right">Acciones</TableCell>
+              {isAdmin && <TableCell align="right" sx={hideOnMobile}>Mín.</TableCell>}
+              <TableCell sx={hideOnMobile}>Estado</TableCell>
+              {isAdmin && <TableCell align="right">Acciones</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={9}>Cargando...</TableCell>
+                <TableCell colSpan={isAdmin ? 9 : 7}>Cargando...</TableCell>
               </TableRow>
             ) : productos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} align="center">
+                <TableCell colSpan={isAdmin ? 9 : 7} align="center">
                   {busqueda || categoriaFiltro
                     ? 'No hay productos que coincidan con la búsqueda o el filtro.'
                     : 'No hay productos. Crea categorías y luego productos.'}
@@ -157,7 +185,7 @@ const ProductosList: React.FC = () => {
             ) : (
               productos.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell>
+                  <TableCell sx={hideOnMobile}>
                     {p.imagen ? (
                       <img
                         src={getImagenProductoUrl(p.imagen)}
@@ -170,7 +198,7 @@ const ProductosList: React.FC = () => {
                   </TableCell>
                   <TableCell>{p.codigo}</TableCell>
                   <TableCell>{p.nombre}</TableCell>
-                  <TableCell>{p.categoria_nombre || '-'}</TableCell>
+                  <TableCell sx={hideOnTablet}>{p.categoria_nombre || '-'}</TableCell>
                   <TableCell align="right">
                     {new Intl.NumberFormat('es-CL', {
                       style: 'currency',
@@ -178,32 +206,36 @@ const ProductosList: React.FC = () => {
                     }).format(Number(p.precio_venta))}
                   </TableCell>
                   <TableCell align="right">{p.stock_actual}</TableCell>
-                  <TableCell align="right">{p.stock_minimo}</TableCell>
-                  <TableCell>
+                  {isAdmin && <TableCell align="right" sx={hideOnMobile}>{p.stock_minimo}</TableCell>}
+                  <TableCell sx={hideOnMobile}>
                     {p.bajo_stock ? (
                       <Chip label="Bajo stock" size="small" color="warning" />
                     ) : (
                       <Chip label="OK" size="small" color="success" />
                     )}
                   </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => navigate(`/productos/${p.id}`)}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      onClick={() => handleDelete(p.id, p.nombre)}
-                    >
-                      🗑
-                    </IconButton>
-                  </TableCell>
+                  {isAdmin && (
+                    <TableCell align="right">
+                      <IconButton size="small" onClick={() => navigate(`/productos/${p.id}`)}>
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleDelete(p.id, p.nombre)}
+                      >
+                        🗑
+                      </IconButton>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </TableContainer>
+      </ResponsiveTableWrap>
+      </DataCard>
     </Box>
   );
 };

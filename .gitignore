@@ -1,7 +1,10 @@
 # Entornos virtuales
 venv/
 env/
-*.env
+.env
+.env.*
+!.env.example
+!**/.env.example
 
 # Dependencias de Node
 node_modules/
@@ -10,6 +13,9 @@ package-lock.json
 # Archivos de base de datos
 *.sqlite3
 *.db
+
+# Imágenes subidas por usuarios (van al servidor en producción)
+producmarket/media/
 
 # Archivos de sistema
 .DS_Store

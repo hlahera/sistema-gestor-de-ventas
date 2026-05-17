@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { OfflineProvider } from './offline/OfflineContext';
+import { AuthProvider, useAuth } from './auth/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -12,32 +13,28 @@ import TopVentas from './pages/TopVentas';
 import ReportarVentas from './pages/ReportarVentas';
 import ReportesList from './pages/ReportesList';
 import VendedoresList from './pages/VendedoresList';
-import { getStoredUser } from './api/client';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const user = getStoredUser();
-  const isAuth = localStorage.getItem('isAuthenticated') === 'true' && user;
-  if (!isAuth) return <Navigate to="/" replace />;
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 /** Solo administradores pueden acceder a esta ruta */
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const user = getStoredUser();
+  const { user } = useAuth();
   if (!user || user.tipo !== 'admin') return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
-function App() {
-  const user = getStoredUser();
-  const isAuth = typeof window !== 'undefined' && localStorage.getItem('isAuthenticated') === 'true' && user;
+function AppRoutes() {
+  const { isAuthenticated } = useAuth();
   return (
-    <OfflineProvider>
-      <BrowserRouter>
-        <Routes>
+    <BrowserRouter>
+      <Routes>
         <Route
-          path="/"
-          element={isAuth ? <Navigate to="/dashboard" replace /> : <Login />}
+          path="/login"
+          element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />}
         />
         <Route
           path="/"
@@ -47,10 +44,11 @@ function App() {
             </ProtectedRoute>
           }
         >
+          <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="productos" element={<ProductosList />} />
-          <Route path="productos/nuevo" element={<ProductoForm />} />
-          <Route path="productos/:id" element={<ProductoForm />} />
+          <Route path="productos/nuevo" element={<AdminRoute><ProductoForm /></AdminRoute>} />
+          <Route path="productos/:id" element={<AdminRoute><ProductoForm /></AdminRoute>} />
           <Route path="categorias" element={<AdminRoute><CategoriasList /></AdminRoute>} />
           <Route path="movimientos" element={<MovimientosList />} />
           <Route path="top-ventas" element={<AdminRoute><TopVentas /></AdminRoute>} />
@@ -58,9 +56,18 @@ function App() {
           <Route path="vendedores" element={<AdminRoute><VendedoresList /></AdminRoute>} />
           <Route path="reportar-ventas" element={<ReportarVentas />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+function App() {
+  return (
+    <OfflineProvider>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
     </OfflineProvider>
   );
 }

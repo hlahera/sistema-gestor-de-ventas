@@ -2,11 +2,12 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, BasePermission, SAFE_METHODS
 from django.db import IntegrityError
 from django.db.models import Sum, F, Q, DecimalField, ExpressionWrapper
 from django.db.models.functions import ExtractYear, ExtractMonth
 from django.utils import timezone
+from datetime import datetime
 from django.contrib.auth import get_user_model
 from .models import Categoria, Producto, MovimientoInventario, ReporteVenta, ReporteVentaLinea
 from .serializers import (
@@ -36,15 +37,31 @@ def _es_admin(user):
         return False
 
 
+class IsAdminForUnsafeMethods(BasePermission):
+    """
+    Permite lectura a cualquier usuario autenticado.
+    Restringe operaciones de escritura (POST/PATCH/PUT/DELETE) solo a administradores.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return _es_admin(request.user)
+
+
 class CategoriaViewSet(viewsets.ModelViewSet):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
+    permission_classes = [IsAdminForUnsafeMethods]
 
 
 class ProductoViewSet(viewsets.ModelViewSet):
     queryset = Producto.objects.select_related('categoria')
     filter_backends = [SearchFilter]
     search_fields = ['codigo', 'nombre', 'categoria__nombre']
+    permission_classes = [IsAdminForUnsafeMethods]
 
     def get_queryset(self):
         qs = Producto.objects.select_related('categoria')
@@ -64,6 +81,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
         """Resumen para el dashboard: totales y productos bajo stock."""
+        # Admin: visión global del inventario. Vendedor: visión de sus movimientos.
         total_productos = Producto.objects.filter(activo=True).count()
         bajo_stock = Producto.objects.filter(
             activo=True,
@@ -72,7 +90,11 @@ class ProductoViewSet(viewsets.ModelViewSet):
         valor_inventario = Producto.objects.filter(activo=True).aggregate(
             total=Sum(F('stock_actual') * F('precio_venta'))
         )['total'] or 0
-        ultimos_movimientos = MovimientoInventario.objects.select_related('producto')[:10]
+
+        mov_qs = MovimientoInventario.objects.select_related('producto').order_by('-fecha')
+        if not _es_admin(request.user):
+            mov_qs = mov_qs.filter(creado_por=request.user)
+        ultimos_movimientos = mov_qs[:10]
         serializer_mov = MovimientoInventarioSerializer(ultimos_movimientos, many=True)
         return Response({
             'total_productos': total_productos,
@@ -84,6 +106,11 @@ class ProductoViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def top_ventas(self, request):
         """Los 10 productos más vendidos (por cantidad total de salidas). Solo para admin."""
+        if not _es_admin(request.user):
+            return Response(
+                {'detail': 'Solo el administrador puede ver esta información.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         top = (
             Producto.objects.filter(activo=True)
             .annotate(
@@ -132,22 +159,44 @@ class ProductoViewSet(viewsets.ModelViewSet):
 
 class MovimientoInventarioViewSet(viewsets.ModelViewSet):
     queryset = MovimientoInventario.objects.select_related('producto').order_by('-fecha')
+    permission_classes = [IsAuthenticated]
+    # Los movimientos alteran stock al crearse; editar/borrar dejaría el inventario inconsistente.
+    http_method_names = ['get', 'post', 'head', 'options']
 
     def get_serializer_class(self):
         if self.action in ('create', 'update', 'partial_update'):
             return MovimientoInventarioCreateSerializer
         return MovimientoInventarioSerializer
 
+    def get_queryset(self):
+        qs = MovimientoInventario.objects.select_related('producto').order_by('-fecha')
+        fecha = self.request.query_params.get('fecha')
+        if fecha:
+            try:
+                datetime.strptime(fecha, '%Y-%m-%d')
+            except ValueError:
+                fecha = None
+            if fecha:
+                qs = qs.filter(fecha__date=fecha)
+        if _es_admin(self.request.user):
+            return qs
+        # Vendedor: solo ve movimientos registrados por él
+        return qs.filter(creado_por=self.request.user)
+
     def perform_create(self, serializer):
         data = serializer.validated_data
         responsable = (data.get('responsable') or '').strip()
         if not responsable and self.request.user.is_authenticated:
             responsable = self.request.user.get_full_name().strip() or self.request.user.username
-        serializer.save(responsable=responsable or data.get('responsable', ''))
+        serializer.save(
+            responsable=responsable or data.get('responsable', ''),
+            creado_por=self.request.user if self.request.user.is_authenticated else None,
+        )
 
 
 class ReporteVentaViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
         qs = ReporteVenta.objects.select_related('vendedor').prefetch_related('lineas__producto')
@@ -169,19 +218,58 @@ class ReporteVentaViewSet(viewsets.ModelViewSet):
                 {'detail': 'Solo los vendedores pueden crear reportes.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        try:
-            return super().create(request, *args, **kwargs)
-        except IntegrityError:
-            return Response(
-                {'detail': 'Ya tienes un reporte para esta fecha. Solo se permite uno por día.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        return super().create(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
         obj = self.get_object()
         if not _es_admin(request.user) and obj.vendedor_id != request.user.id:
             return Response(status=status.HTTP_403_FORBIDDEN)
         return super().retrieve(request, *args, **kwargs)
+
+    @action(detail=False, methods=['get'])
+    def resumen_dia(self, request):
+        """
+        Total recaudado por fecha reportada (según reportes aprobados).
+        Útil para ver la recaudación del día "según lo que reportó el vendedor".
+        """
+        if not _es_admin(request.user):
+            return Response({'detail': 'Solo el administrador puede ver esta información.'}, status=status.HTTP_403_FORBIDDEN)
+        fecha = (request.query_params.get('fecha') or '').strip()
+        try:
+            datetime.strptime(fecha, '%Y-%m-%d')
+        except ValueError:
+            return Response({'detail': 'Parámetro "fecha" inválido. Usa YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = (
+            ReporteVentaLinea.objects
+            .filter(reporte__estado='aprobado', reporte__fecha=fecha)
+            .values('producto_id', 'producto__codigo', 'producto__nombre', 'producto__precio_venta')
+            .annotate(
+                cantidad=Sum('cantidad'),
+                importe=Sum(
+                    ExpressionWrapper(
+                        F('cantidad') * F('producto__precio_venta'),
+                        output_field=DecimalField(max_digits=14, decimal_places=2),
+                    )
+                ),
+            )
+            .order_by('producto__codigo')
+        )
+        items = []
+        total = 0.0
+        for r in qs:
+            cant = int(r['cantidad'] or 0)
+            importe = float(r['importe'] or 0)
+            total += importe
+            items.append({
+                'producto': r['producto_id'],
+                'producto_codigo': r['producto__codigo'],
+                'producto_nombre': r['producto__nombre'],
+                'precio_venta': str(r['producto__precio_venta']),
+                'cantidad': cant,
+                'importe': importe,
+            })
+        return Response({'fecha': fecha, 'total': float(total), 'items': items})
 
     @action(detail=True, methods=['post'])
     def aprobar(self, request, pk=None):
@@ -199,6 +287,7 @@ class ReporteVentaViewSet(viewsets.ModelViewSet):
                 cantidad=linea.cantidad,
                 motivo=f'Reporte ventas {reporte.fecha} aprobado',
                 responsable=vendedor_nombre,
+                creado_por=reporte.vendedor,
             )
         reporte.estado = 'aprobado'
         reporte.aprobado_por = request.user
@@ -230,7 +319,11 @@ class VendedorViewSet(viewsets.ModelViewSet):
         if not _es_admin(self.request.user):
             return User.objects.none()
         # Solo vendedores activos (los "eliminados" se desactivan pero se conservan reportes/ventas)
-        return User.objects.filter(perfil__tipo='vendedor', is_active=True).order_by('username')
+        return (
+            User.objects.filter(perfil__tipo='vendedor', is_active=True)
+            .select_related('perfil')
+            .order_by('username')
+        )
 
     def get_serializer_class(self):
         if self.action == 'create':

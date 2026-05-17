@@ -14,6 +14,7 @@ class PerfilUsuario(models.Model):
         related_name='perfil'
     )
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='vendedor')
+    telefono = models.CharField('teléfono', max_length=32, blank=True, default='')
 
     class Meta:
         verbose_name = 'Perfil de usuario'
@@ -86,6 +87,14 @@ class MovimientoInventario(models.Model):
         blank=True,
         help_text='Persona que registra el movimiento',
     )
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='movimientos_inventario',
+        help_text='Usuario autenticado que registró el movimiento',
+    )
     fecha = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -104,7 +113,7 @@ class MovimientoInventario(models.Model):
 
 
 class ReporteVenta(models.Model):
-    """Reporte de ventas del día enviado por el vendedor, pendiente de aprobación del admin."""
+    """Reporte de ventas (fecha indicada) enviado por el vendedor; el admin aprueba o rechaza."""
     ESTADO_CHOICES = [
         ('pendiente', 'Pendiente'),
         ('aprobado', 'Aprobado'),
@@ -132,7 +141,6 @@ class ReporteVenta(models.Model):
         ordering = ['-creado_en']
         verbose_name = 'Reporte de venta'
         verbose_name_plural = 'Reportes de venta'
-        unique_together = [['fecha', 'vendedor']]
 
     def __str__(self):
         return f"Reporte {self.fecha} - {self.vendedor.username} ({self.get_estado_display()})"

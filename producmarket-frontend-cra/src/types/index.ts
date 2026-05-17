@@ -28,6 +28,8 @@ export interface MovimientoInventario {
   producto: number;
   producto_nombre: string;
   producto_codigo: string;
+  /** Precio de venta del catálogo (solo informativo para salidas / importe) */
+  precio_venta?: string;
   tipo: 'entrada' | 'salida';
   cantidad: number;
   motivo: string;

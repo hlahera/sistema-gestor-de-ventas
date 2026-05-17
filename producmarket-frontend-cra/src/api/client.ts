@@ -1,7 +1,10 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000/api';
-const MEDIA_BASE = 'http://localhost:8000';
+/** En producción define REACT_APP_API_URL y REACT_APP_MEDIA_URL al hacer el build (Vercel/Netlify). */
+const API_BASE =
+  process.env.REACT_APP_API_URL?.replace(/\/$/, '') || 'http://localhost:8000/api';
+const MEDIA_BASE =
+  process.env.REACT_APP_MEDIA_URL?.replace(/\/$/, '') || 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL: API_BASE,
@@ -55,6 +58,25 @@ export const clearStoredAuth = () => {
   localStorage.removeItem('user'); // clave antigua del login anterior
   setAuthToken(null);
 };
+
+/** Borra datos locales del frontend (IndexedDB + localStorage) para reiniciar la app. */
+export async function clearLocalAppData(): Promise<void> {
+  try {
+    clearStoredAuth();
+  } catch {
+    // ignore
+  }
+  try {
+    localStorage.removeItem('producmarket-offline-lastSync');
+  } catch {
+    // ignore
+  }
+  try {
+    indexedDB.deleteDatabase('producmarket-offline');
+  } catch {
+    // ignore
+  }
+}
 
 // Restaurar token al cargar la app (p. ej. tras recargar la página)
 try {
@@ -169,7 +191,8 @@ export const updateProducto = (
 export const deleteProducto = (id: number) => api.delete(`/productos/${id}/`);
 
 // Movimientos
-export const getMovimientos = () => api.get('/movimientos/');
+export const getMovimientos = (params?: { fecha?: string }) =>
+  api.get('/movimientos/', { params: params?.fecha ? { fecha: params.fecha } : undefined });
 export const createMovimiento = (data: {
   producto: number;
   tipo: 'entrada' | 'salida';
@@ -200,6 +223,8 @@ export interface ReporteVenta {
     producto_codigo: string;
     producto_nombre: string;
     cantidad: number;
+    /** Precio de venta del catálogo (incluido al cargar detalle desde la API). */
+    precio_venta?: string;
   }[];
 }
 
@@ -212,13 +237,31 @@ export const aprobarReporte = (id: number) => api.post<ReporteVenta>(`/reportes/
 export const rechazarReporte = (id: number, observaciones?: string) =>
   api.post<ReporteVenta>(`/reportes/${id}/rechazar/`, { observaciones: observaciones || '' });
 
+export interface ResumenReporteDiaItem {
+  producto: number;
+  producto_codigo: string;
+  producto_nombre: string;
+  precio_venta: string;
+  cantidad: number;
+  importe: number;
+}
+
+export interface ResumenReporteDia {
+  fecha: string;
+  total: number;
+  items: ResumenReporteDiaItem[];
+}
+
+export const getResumenReportesDia = (fecha: string) =>
+  api.get<ResumenReporteDia>('/reportes/resumen_dia/', { params: { fecha } });
+
 // Vendedores (solo admin: listar y crear)
 export interface Vendedor {
   id: number;
   username: string;
   first_name: string;
   last_name: string;
-  email: string;
+  telefono: string;
   is_active: boolean;
   date_joined: string;
 }
@@ -229,12 +272,12 @@ export const createVendedor = (data: {
   password: string;
   first_name?: string;
   last_name?: string;
-  email?: string;
+  telefono?: string;
 }) => api.post<Vendedor>('/vendedores/', data);
 export const updateVendedor = (id: number, data: {
   first_name?: string;
   last_name?: string;
-  email?: string;
+  telefono?: string;
   is_active?: boolean;
   password?: string;
 }) => api.patch<Vendedor>(`/vendedores/${id}/`, data);

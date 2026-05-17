@@ -2,21 +2,24 @@ import React, { useEffect, useState } from 'react';
 import {
   Box,
   Button,
-  Paper,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Typography,
   IconButton,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { getCategorias, deleteCategoria } from '../api/client';
 import type { Categoria as CategoriaType } from '../types';
 import CategoriaFormDialog from '../components/CategoriaFormDialog';
+import { PageHeader } from '../components/ui/PageHeader';
+import { DataCard } from '../components/ui/DataCard';
+import { ResponsiveTableWrap } from '../components/ui/ResponsiveTableWrap';
+import { hideOnMobile, pageContentSx } from '../styles/responsive';
 
 const CategoriasList: React.FC = () => {
   const [categorias, setCategorias] = useState<CategoriaType[]>([]);
@@ -49,64 +52,70 @@ const CategoriasList: React.FC = () => {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Box>
-          <Typography variant="h5">Categorías</Typography>
-          <Typography variant="body2" color="textSecondary">
-            Clasifica tus productos (ej. Alimentos, Limpieza, Electrónicos)
-          </Typography>
-        </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpen(true)}>
-          Nueva categoría
-        </Button>
-      </Box>
-      <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Nombre</TableCell>
-              <TableCell>Descripción</TableCell>
-              <TableCell align="right">Productos</TableCell>
-              <TableCell align="right">Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {categorias.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} align="center">
-                  No hay categorías. Crea una para organizar tus productos.
-                </TableCell>
-              </TableRow>
-            ) : (
-              categorias.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell>{c.nombre}</TableCell>
-                  <TableCell>{c.descripcion || '-'}</TableCell>
-                  <TableCell align="right">{c.productos_count ?? 0}</TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => handleEdit(c.id)}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      onClick={() => handleDelete(c.id, c.nombre)}
-                    >
-                      🗑
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      <CategoriaFormDialog
-        open={open}
-        onClose={handleClose}
-        editingId={editingId}
+    <Box sx={pageContentSx}>
+      <PageHeader
+        title="Categorías"
+        subtitle="Clasifica tus productos (ej. Alimentos, Limpieza, Electrónicos)."
+        action={
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setOpen(true)}
+            sx={{ width: { xs: '100%', sm: 'auto' } }}
+          >
+            Nueva categoría
+          </Button>
+        }
       />
+
+      <DataCard noPadding>
+        <ResponsiveTableWrap showScrollHint={false}>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Nombre</TableCell>
+                  <TableCell sx={hideOnMobile}>Descripción</TableCell>
+                  <TableCell align="right">Productos</TableCell>
+                  <TableCell align="right">Acciones</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {categorias.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
+                      No hay categorías. Crea una para organizar tus productos.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  categorias.map((c) => (
+                    <TableRow key={c.id} hover>
+                      <TableCell sx={{ fontWeight: 600 }}>{c.nombre}</TableCell>
+                      <TableCell sx={hideOnMobile}>{c.descripcion || '—'}</TableCell>
+                      <TableCell align="right">{c.productos_count ?? 0}</TableCell>
+                      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                        <IconButton size="small" onClick={() => handleEdit(c.id)} aria-label="Editar">
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDelete(c.id, c.nombre)}
+                          aria-label="Eliminar"
+                        >
+                          <DeleteOutlineIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </ResponsiveTableWrap>
+      </DataCard>
+
+      <CategoriaFormDialog open={open} onClose={handleClose} editingId={editingId} />
     </Box>
   );
 };

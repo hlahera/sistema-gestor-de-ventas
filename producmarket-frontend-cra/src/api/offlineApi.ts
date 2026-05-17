@@ -62,27 +62,44 @@ export async function getCategoriasOffline() {
   return { data };
 }
 
-export async function getMovimientosOffline() {
+function fechaLocalYmd(isoOrDate: string | Date): string {
+  const d = typeof isoOrDate === 'string' ? new Date(isoOrDate) : isoOrDate;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function movimientoEnFecha(m: { fecha: string }, fechaYmd: string | undefined): boolean {
+  if (!fechaYmd) return true;
+  return fechaLocalYmd(m.fecha) === fechaYmd;
+}
+
+export async function getMovimientosOffline(params?: { fecha?: string }) {
+  const fecha = params?.fecha?.trim() || undefined;
   if (navigator.onLine) {
-    const res = await getMovimientos();
-    saveMovimientos(res.data).catch(console.warn);
+    const res = await getMovimientos(fecha ? { fecha } : undefined);
+    // No pisar la caché con un subconjunto filtrado
+    if (!fecha) {
+      saveMovimientos(res.data).catch(console.warn);
+    }
     return res;
   }
-  const data = await getMovimientosFromCache();
+  const data = (await getMovimientosFromCache()) as object[];
+  const base = fecha ? data.filter((m) => movimientoEnFecha(m as { fecha: string }, fecha)) : data;
   const pendientes = await getPendientes();
-  const pendientesAsMov = pendientes.map((p) => ({
-    id: p.id,
-    producto: p.producto,
-    producto_nombre: '(pendiente de sincronización)',
-    producto_codigo: '-',
-    tipo: p.tipo,
-    cantidad: p.cantidad,
-    motivo: p.motivo || '',
-    responsable: p.responsable || '',
-    fecha: new Date(p.createdAt).toISOString(),
-    _pending: true,
-  }));
-  return { data: [...pendientesAsMov, ...(data as object[])] };
+  const pendientesAsMov = pendientes
+    .map((p) => ({
+      id: p.id,
+      producto: p.producto,
+      producto_nombre: '(pendiente de sincronización)',
+      producto_codigo: '-',
+      tipo: p.tipo,
+      cantidad: p.cantidad,
+      motivo: p.motivo || '',
+      responsable: p.responsable || '',
+      fecha: new Date(p.createdAt).toISOString(),
+      _pending: true,
+    }))
+    .filter((m) => movimientoEnFecha(m, fecha));
+  return { data: [...pendientesAsMov, ...base] };
 }
 
 export async function createMovimientoOffline(data: {

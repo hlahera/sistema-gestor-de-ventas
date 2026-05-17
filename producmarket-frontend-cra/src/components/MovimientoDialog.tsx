@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -8,6 +8,10 @@ import {
   TextField,
   MenuItem,
   Typography,
+  Autocomplete,
+  createFilterOptions,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { getProductosOffline, createMovimientoOffline } from '../api/offlineApi';
 import { getStoredUser } from '../api/client';
@@ -28,9 +32,17 @@ interface Props {
   onSaved: () => void;
 }
 
+const filterProductos = createFilterOptions<Producto>({
+  ignoreCase: true,
+  stringify: (option) =>
+    `${option.codigo} ${option.nombre} ${option.categoria_nombre ?? ''}`,
+});
+
 const MovimientoDialog: React.FC<Props> = ({ open, onClose, onSaved }) => {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [productoId, setProductoId] = useState('');
+  const [productoSel, setProductoSel] = useState<Producto | null>(null);
   const [tipo, setTipo] = useState<'entrada' | 'salida'>('entrada');
   const [cantidad, setCantidad] = useState('');
   const [motivo, setMotivo] = useState('');
@@ -41,7 +53,7 @@ const MovimientoDialog: React.FC<Props> = ({ open, onClose, onSaved }) => {
   useEffect(() => {
     if (open) {
       getProductosOffline({ activo: true }).then((res) => setProductos(res.data as Producto[]));
-      setProductoId('');
+      setProductoSel(null);
       setTipo('entrada');
       setCantidad('');
       setMotivo('');
@@ -50,22 +62,27 @@ const MovimientoDialog: React.FC<Props> = ({ open, onClose, onSaved }) => {
     }
   }, [open]);
 
+  const opcionesOrdenadas = useMemo(
+    () => [...productos].sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { sensitivity: 'base' })),
+    [productos]
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     const cant = parseInt(cantidad, 10);
-    if (!productoId || !cant || cant <= 0) {
-      setError('Selecciona un producto y una cantidad válida.');
+    if (!productoSel || !cant || cant <= 0) {
+      setError('Elige un producto de la lista (escribe para buscar) y una cantidad válida.');
       return;
     }
-    const prod = productos.find((p) => p.id === Number(productoId));
-    if (tipo === 'salida' && prod && prod.stock_actual < cant) {
+    const prod = productoSel;
+    if (tipo === 'salida' && prod.stock_actual < cant) {
       setError(`Stock insuficiente. Actual: ${prod.stock_actual}`);
       return;
     }
     setSaving(true);
     createMovimientoOffline({
-      producto: Number(productoId),
+      producto: prod.id,
       tipo,
       cantidad: cant,
       motivo: motivo.trim() || undefined,
@@ -80,7 +97,7 @@ const MovimientoDialog: React.FC<Props> = ({ open, onClose, onSaved }) => {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth fullScreen={fullScreen} scroll="paper">
       <DialogTitle>Nuevo movimiento</DialogTitle>
       <form onSubmit={handleSubmit}>
         <DialogContent>
@@ -89,22 +106,44 @@ const MovimientoDialog: React.FC<Props> = ({ open, onClose, onSaved }) => {
               {error}
             </Typography>
           )}
-          <TextField
+          <Autocomplete
             fullWidth
-            select
-            label="Producto"
-            value={productoId}
-            onChange={(e) => setProductoId(e.target.value)}
-            required
-            margin="normal"
-          >
-            <MenuItem value="">Seleccionar...</MenuItem>
-            {productos.map((p) => (
-              <MenuItem key={p.id} value={String(p.id)}>
-                {p.codigo} – {p.nombre} (stock: {p.stock_actual})
-              </MenuItem>
-            ))}
-          </TextField>
+            value={productoSel}
+            onChange={(_, value) => {
+              setProductoSel(value);
+              setError('');
+            }}
+            options={opcionesOrdenadas}
+            filterOptions={filterProductos}
+            getOptionLabel={(p) => `${p.codigo} – ${p.nombre}`}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            noOptionsText="Ningún producto coincide; revisa código o nombre"
+            renderOption={(props, p) => (
+              <li {...props} key={p.id}>
+                <Typography variant="body2" component="span">
+                  {p.codigo} – {p.nombre}
+                </Typography>
+                <Typography variant="caption" color="textSecondary" display="block">
+                  Stock: {p.stock_actual}
+                  {p.categoria_nombre ? ` · ${p.categoria_nombre}` : ''}
+                </Typography>
+              </li>
+            )}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Producto"
+                required
+                margin="normal"
+                placeholder="Escribe código, nombre o categoría…"
+                helperText={
+                  productos.length === 0
+                    ? 'No hay productos activos'
+                    : 'Filtra mientras escribes; debes elegir una fila de la lista'
+                }
+              />
+            )}
+          />
           <TextField
             fullWidth
             select
@@ -120,10 +159,10 @@ const MovimientoDialog: React.FC<Props> = ({ open, onClose, onSaved }) => {
             fullWidth
             label="Responsable"
             value={responsable}
-            onChange={(e) => setResponsable(e.target.value)}
             margin="normal"
             required
-            placeholder="Nombre de quien registra el movimiento"
+            disabled
+            helperText="Se asigna automáticamente según el usuario autenticado."
           />
           <TextField
             fullWidth
@@ -143,7 +182,15 @@ const MovimientoDialog: React.FC<Props> = ({ open, onClose, onSaved }) => {
             margin="normal"
           />
         </DialogContent>
-        <DialogActions>
+        <DialogActions
+          sx={{
+            flexDirection: { xs: 'column-reverse', sm: 'row' },
+            px: 2,
+            pb: 2,
+            gap: 1,
+            '& .MuiButton-root': { width: { xs: '100%', sm: 'auto' }, m: 0 },
+          }}
+        >
           <Button onClick={onClose}>Cancelar</Button>
           <Button type="submit" variant="contained" disabled={saving}>
             {saving ? 'Guardando...' : 'Registrar'}

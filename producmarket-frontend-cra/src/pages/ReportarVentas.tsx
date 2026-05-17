@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -13,10 +13,7 @@ import {
   TextField,
   IconButton,
   Alert,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
+  Autocomplete,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -29,14 +26,30 @@ import {
   type ReporteVentaLineaItem,
 } from '../api/client';
 import type { Producto } from '../types';
+import { PageHeader } from '../components/ui/PageHeader';
+import { DataCard } from '../components/ui/DataCard';
+import { ResponsiveTableWrap } from '../components/ui/ResponsiveTableWrap';
+import { pageContentSx } from '../styles/responsive';
 
-const today = () => new Date().toISOString().slice(0, 10);
+/** Fecha local YYYY-MM-DD (evita que toISOString use UTC y cambie el día). */
+function fechaLocalHoy(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const formatoPeso = (n: number) =>
+  new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(n);
 
 const ReportarVentas: React.FC = () => {
-  const [productos, setProductos] = useState<{ id: number; codigo: string; nombre: string }[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
   const [reportes, setReportes] = useState<ReporteVenta[]>([]);
-  const [fecha, setFecha] = useState(today());
-  const [lineas, setLineas] = useState<{ producto: number; cantidad: number }[]>([{ producto: 0, cantidad: 1 }]);
+  const [fecha, setFecha] = useState(() => fechaLocalHoy());
+  const [lineas, setLineas] = useState<{ producto: number; cantidad: number }[]>([
+    { producto: 0, cantidad: 1 },
+  ]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +59,7 @@ const ReportarVentas: React.FC = () => {
     getProductos({ activo: true })
       .then((res) => {
         const data = Array.isArray(res.data) ? res.data : (res.data as { results?: Producto[] }).results || [];
-        setProductos(data.map((p: Producto) => ({ id: p.id, codigo: p.codigo, nombre: p.nombre })));
+        setProductos(data);
       })
       .catch(() => setProductos([]));
   };
@@ -68,7 +81,7 @@ const ReportarVentas: React.FC = () => {
   }, []);
 
   const addLinea = () => {
-    setLineas((prev) => [...prev, { producto: productos[0]?.id ?? 0, cantidad: 1 }]);
+    setLineas((prev) => [...prev, { producto: 0, cantidad: 1 }]);
   };
 
   const removeLinea = (index: number) => {
@@ -95,15 +108,15 @@ const ReportarVentas: React.FC = () => {
     createReporte({ fecha, lineas: valid })
       .then(() => {
         setSuccess('Reporte enviado. Quedará pendiente de aprobación del administrador.');
-        setLineas([{ producto: productos[0]?.id ?? 0, cantidad: 1 }]);
-        setFecha(today());
+        setLineas([{ producto: 0, cantidad: 1 }]);
+        setFecha(fechaLocalHoy());
         loadReportes();
       })
       .catch((err) => {
         const msg =
           err?.response?.data?.fecha?.[0] ||
           err?.response?.data?.detail ||
-          'Error al enviar el reporte. ¿Ya reportaste ventas para esta fecha?';
+          'Error al enviar el reporte.';
         setError(String(msg));
       })
       .finally(() => setSending(false));
@@ -112,16 +125,25 @@ const ReportarVentas: React.FC = () => {
   const estadoColor = (estado: string) =>
     estado === 'aprobado' ? 'success' : estado === 'rechazado' ? 'error' : 'warning';
 
-  return (
-    <Box>
-      <Typography variant="h5" gutterBottom>
-        Reportar ventas del día
-      </Typography>
-      <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-        Envía tu reporte de ventas para que el administrador lo revise y apruebe. Solo puedes enviar un reporte por día.
-      </Typography>
+  const totalEstimadoReporte = useMemo(
+    () =>
+      lineas.reduce((sum, l) => {
+        if (l.producto <= 0 || l.cantidad <= 0) return sum;
+        const p = productos.find((x) => x.id === l.producto);
+        if (!p) return sum;
+        return sum + l.cantidad * Number(p.precio_venta);
+      }, 0),
+    [lineas, productos]
+  );
 
-      <Paper sx={{ p: 2, mb: 3 }}>
+  return (
+    <Box sx={pageContentSx}>
+      <PageHeader
+        title="Reportar ventas"
+        subtitle="Envía reportes cuando los necesites; el administrador los revisará y aprobará o rechazará."
+      />
+
+      <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, mb: 3 }}>
         <Typography variant="subtitle1" gutterBottom>
           Nuevo reporte
         </Typography>
@@ -131,40 +153,103 @@ const ReportarVentas: React.FC = () => {
           value={fecha}
           onChange={(e) => setFecha(e.target.value)}
           InputLabelProps={{ shrink: true }}
-          sx={{ mr: 2, mb: 2, minWidth: 160 }}
+          inputProps={{
+            max: fechaLocalHoy(),
+          }}
+          helperText=""
+          sx={{ mb: 2, width: { xs: '100%', sm: 260 } }}
         />
-        {lineas.map((linea, index) => (
-          <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <FormControl size="small" sx={{ minWidth: 260 }}>
-              <InputLabel>Producto</InputLabel>
-              <Select
-                value={linea.producto || ''}
-                label="Producto"
-                onChange={(e) => updateLinea(index, 'producto', Number(e.target.value) || 0)}
+        {lineas.map((linea, index) => {
+          const prodSel = linea.producto > 0 ? productos.find((p) => p.id === linea.producto) : null;
+          const subtotalLinea =
+            prodSel && linea.cantidad > 0
+              ? linea.cantidad * Number(prodSel.precio_venta)
+              : null;
+          return (
+            <Box
+              key={index}
+              sx={{
+                display: 'flex',
+                alignItems: { xs: 'stretch', sm: 'flex-start' },
+                flexDirection: { xs: 'column', sm: 'row' },
+                gap: 2,
+                mb: 2,
+              }}
+            >
+              <Autocomplete
+                size="small"
+                options={productos}
+                getOptionLabel={(p) => `${p.codigo} – ${p.nombre}`}
+                isOptionEqualToValue={(a, b) => a.id === b.id}
+                value={prodSel ?? null}
+                onChange={(_, v) => updateLinea(index, 'producto', v?.id ?? 0)}
+                filterOptions={(opts, { inputValue }) => {
+                  const q = inputValue.trim().toLowerCase();
+                  if (!q) return opts;
+                  return opts.filter(
+                    (p) =>
+                      p.codigo.toLowerCase().includes(q) ||
+                      p.nombre.toLowerCase().includes(q) ||
+                      `${p.codigo} ${p.nombre}`.toLowerCase().includes(q)
+                  );
+                }}
+                noOptionsText="Sin coincidencias en catálogo"
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Producto"
+                    placeholder="Escribe código o nombre…"
+                    helperText=""
+                  />
+                )}
+                sx={{ width: { xs: '100%', sm: 380 }, maxWidth: '100%' }}
+              />
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  alignItems: { xs: 'stretch', sm: 'flex-start' },
+                  gap: 2,
+                  flexShrink: 0,
+                }}
               >
-                <MenuItem value="">Seleccione producto</MenuItem>
-                {productos.map((p) => (
-                  <MenuItem key={p.id} value={p.id}>
-                    {p.codigo} – {p.nombre}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              type="number"
-              size="small"
-              label="Cantidad"
-              value={linea.cantidad}
-              onChange={(e) => updateLinea(index, 'cantidad', Math.max(0, parseInt(e.target.value, 10) || 0))}
-              inputProps={{ min: 1 }}
-              sx={{ width: 100 }}
-            />
-            <IconButton onClick={() => removeLinea(index)} disabled={lineas.length <= 1} color="error">
-              <DeleteIcon />
-            </IconButton>
-          </Box>
-        ))}
-        <Button startIcon={<AddIcon />} onClick={addLinea} sx={{ mb: 2 }}>
+                <TextField
+                  type="number"
+                  size="small"
+                  label="Cantidad"
+                  value={linea.cantidad}
+                  onChange={(e) =>
+                    updateLinea(index, 'cantidad', Math.max(0, parseInt(e.target.value, 10) || 0))
+                  }
+                  inputProps={{ min: 1 }}
+                  sx={{ width: { xs: '100%', sm: 120 } }}
+                />
+                {subtotalLinea != null && (
+                  <Typography variant="body2" color="textSecondary" sx={{ pt: { sm: 1 }, whiteSpace: 'nowrap' }}>
+                    Subtotal: {formatoPeso(subtotalLinea)}
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-end', sm: 'flex-start' }, pt: { sm: 0.5 } }}>
+                <IconButton onClick={() => removeLinea(index)} disabled={lineas.length <= 1} color="error">
+                  <DeleteIcon />
+                </IconButton>
+              </Box>
+            </Box>
+          );
+        })}
+        <Paper variant="outlined" sx={{ p: 1.5, mb: 2, bgcolor: 'action.hover' }}>
+          <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+            Total estimado del reporte 
+          </Typography>
+          <Typography variant="h6" component="p">
+            {formatoPeso(totalEstimadoReporte)}
+          </Typography>
+          <Typography variant="caption" color="textSecondary" display="block" sx={{ mt: 0.5 }}>
+           
+          </Typography>
+        </Paper>
+        <Button startIcon={<AddIcon />} onClick={addLinea} sx={{ mb: 2, width: { xs: '100%', sm: 'auto' } }}>
           Añadir línea
         </Button>
         <br />
@@ -175,15 +260,15 @@ const ReportarVentas: React.FC = () => {
           startIcon={<SendIcon />}
           onClick={handleSubmit}
           disabled={sending || loading}
+          sx={{ width: { xs: '100%', sm: 'auto' } }}
         >
           {sending ? 'Enviando...' : 'Enviar reporte'}
         </Button>
       </Paper>
 
-      <Typography variant="subtitle1" gutterBottom>
-        Mis reportes
-      </Typography>
-      <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+      <DataCard title="Mis reportes" noPadding>
+      <ResponsiveTableWrap showScrollHint={false}>
+      <TableContainer>
         <Table size="small">
           <TableHead>
             <TableRow>
@@ -221,6 +306,8 @@ const ReportarVentas: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+      </ResponsiveTableWrap>
+      </DataCard>
     </Box>
   );
 };

@@ -10,13 +10,27 @@ import {
   Switch,
   MenuItem,
   InputAdornment,
+  Alert,
 } from '@mui/material';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import { getCategorias, getProducto, createProducto, updateProducto } from '../api/client';
 import { getImagenProductoUrl } from '../api/client';
 import type { Categoria as CategoriaType } from '../types';
+import { PageHeader } from '../components/ui/PageHeader';
+import { pageContentSx } from '../styles/responsive';
 
 const UNIDADES = ['und', 'kg', 'L', 'unidad', 'caja', 'pack'];
+
+function firstApiMessage(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  if (typeof d.detail === 'string') return d.detail;
+  for (const v of Object.values(d)) {
+    if (Array.isArray(v) && v.length && typeof v[0] === 'string') return v[0];
+    if (typeof v === 'string') return v;
+  }
+  return null;
+}
 
 const ProductoForm: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -36,6 +50,8 @@ const ProductoForm: React.FC = () => {
   const [quitarImagen, setQuitarImagen] = useState(false);
   const [activo, setActivo] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [codigoError, setCodigoError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     getCategorias().then((res) => setCategorias(res.data));
@@ -57,6 +73,8 @@ const ProductoForm: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setCodigoError(null);
+    setSubmitError(null);
     setSaving(true);
     const payload = {
       codigo: codigo.trim(),
@@ -68,6 +86,25 @@ const ProductoForm: React.FC = () => {
       unidad_medida: unidadMedida,
       activo,
     };
+    const onError = (err: unknown) => {
+      const ax = err as { response?: { data?: unknown } };
+      const data = ax.response?.data;
+      const codigoMsgs = data && typeof data === 'object' && 'codigo' in data
+        ? (data as { codigo?: string | string[] }).codigo
+        : undefined;
+      const codigoMsg = Array.isArray(codigoMsgs)
+        ? codigoMsgs[0]
+        : typeof codigoMsgs === 'string'
+          ? codigoMsgs
+          : null;
+      if (codigoMsg) {
+        setCodigoError(codigoMsg);
+        return;
+      }
+      const general = firstApiMessage(data);
+      setSubmitError(general || 'No se pudo guardar el producto. Revisa los datos e intenta de nuevo.');
+    };
+
     if (isEdit) {
       updateProducto(
         Number(id),
@@ -76,31 +113,49 @@ const ProductoForm: React.FC = () => {
         quitarImagen
       )
         .then(() => navigate('/productos'))
+        .catch(onError)
         .finally(() => setSaving(false));
     } else {
       (payload as Record<string, unknown>).stock_actual = Number(stockInicial) || 0;
       createProducto(payload, imagenFile || undefined)
         .then(() => navigate('/productos'))
+        .catch(onError)
         .finally(() => setSaving(false));
     }
   };
 
   return (
-    <Box>
-      <Typography variant="h5" gutterBottom>
-        {isEdit ? 'Editar producto' : 'Nuevo producto'}
-      </Typography>
-      <Paper sx={{ p: { xs: 2, sm: 3 }, maxWidth: 560, width: '100%' }}>
+    <Box sx={pageContentSx}>
+      <PageHeader
+        title={isEdit ? 'Editar producto' : 'Nuevo producto'}
+        subtitle={isEdit ? 'Actualiza los datos del catálogo.' : 'Completa la ficha para añadir al inventario.'}
+      />
+      <Paper
+        variant="outlined"
+        sx={{ p: { xs: 2, sm: 3 }, maxWidth: 560, width: '100%', boxSizing: 'border-box', mx: { xs: 0, sm: 0 } }}
+      >
         <form onSubmit={handleSubmit}>
+          {submitError && (
+            <Alert severity="error" sx={{ mb: 1 }} onClose={() => setSubmitError(null)}>
+              {submitError}
+            </Alert>
+          )}
           <TextField
             fullWidth
             label="Código SKU"
             value={codigo}
-            onChange={(e) => setCodigo(e.target.value)}
+            onChange={(e) => {
+              setCodigo(e.target.value);
+              if (codigoError) setCodigoError(null);
+            }}
             required
             margin="normal"
             disabled={isEdit}
-            helperText={isEdit ? 'El código SKU no se puede modificar' : undefined}
+            error={Boolean(codigoError)}
+            helperText={
+              codigoError ||
+              (isEdit ? 'El código SKU no se puede modificar' : undefined)
+            }
           />
           <TextField
             fullWidth
@@ -228,11 +283,27 @@ const ProductoForm: React.FC = () => {
             label="Activo"
             sx={{ mt: 1 }}
           />
-          <Box sx={{ mt: 3, display: 'flex', gap: 1 }}>
-            <Button type="submit" variant="contained" disabled={saving}>
+          <Box
+            sx={{
+              mt: 3,
+              display: 'flex',
+              flexDirection: { xs: 'column-reverse', sm: 'row' },
+              gap: 1,
+            }}
+          >
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={saving}
+              sx={{ width: { xs: '100%', sm: 'auto' } }}
+            >
               {saving ? 'Guardando...' : 'Guardar'}
             </Button>
-            <Button variant="outlined" onClick={() => navigate('/productos')}>
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/productos')}
+              sx={{ width: { xs: '100%', sm: 'auto' } }}
+            >
               Cancelar
             </Button>
           </Box>
