@@ -27,12 +27,25 @@ SECRET_KEY = os.environ.get(
 DEBUG = _env_bool('DEBUG', True)
 
 ALLOWED_HOSTS = _env_list('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+if not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+# Render: el blueprint a veces deja ALLOWED_HOSTS vacío → Django responde 400 a todo
+_render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '').strip()
+if _render_host and _render_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_host)
+if os.environ.get('RENDER') == 'true' and '.onrender.com' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('.onrender.com')
 
 # Orígenes HTTPS del frontend (separados por coma). Ej: https://tu-app.vercel.app
 CORS_ALLOWED_ORIGINS = _env_list(
     'CORS_ALLOWED_ORIGINS',
     'http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173',
 )
+if not CORS_ALLOWED_ORIGINS and os.environ.get('RENDER') == 'true':
+    _render_url = os.environ.get('RENDER_EXTERNAL_URL', '').strip()
+    if _render_url.startswith('https://'):
+        CORS_ALLOWED_ORIGINS.append(_render_url.rstrip('/'))
 
 # Django 4+: admin y formularios detrás de HTTPS
 CSRF_TRUSTED_ORIGINS = _env_list('CSRF_TRUSTED_ORIGINS', '')
@@ -41,6 +54,10 @@ if DEBUG:
     CORS_ALLOWED_ORIGIN_REGEXES = [
         r'^http://localhost:\d+$',
         r'^http://127\.0\.0\.1:\d+$',
+    ]
+elif os.environ.get('RENDER') == 'true':
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r'^https://[\w-]+\.onrender\.com$',
     ]
 
 # --- Aplicaciones ---

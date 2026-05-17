@@ -223,8 +223,10 @@ const Login: React.FC = () => {
         else if (Array.isArray(d)) msg = d.join(' ');
         else if (!ax.response) {
           msg = ax.message?.includes('Network')
-            ? 'No hay conexión con el servidor. Comprueba que el backend esté en marcha.'
+            ? 'No hay conexión con el servidor. Espera 1 minuto (el API puede estar despertando) y recarga.'
             : `${msg}${ax.message ? `: ${ax.message}` : ''}`;
+        } else if (ax.response?.status === 400) {
+          msg = 'El servidor rechazó la petición. Si acabas de desplegar, espera 2 minutos y vuelve a intentar.';
         }
       }
       setError(msg);
