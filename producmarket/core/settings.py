@@ -92,11 +92,13 @@ WSGI_APPLICATION = 'core.wsgi.application'
 if os.environ.get('DATABASE_URL'):
     import dj_database_url
 
+    _db_url = os.environ['DATABASE_URL']
+    _needs_ssl = _env_bool('DATABASE_SSL', 'render.com' in _db_url or 'sslmode=require' in _db_url)
     DATABASES = {
         'default': dj_database_url.config(
-            default=os.environ['DATABASE_URL'],
+            default=_db_url,
             conn_max_age=600,
-            ssl_require=_env_bool('DATABASE_SSL', False),
+            ssl_require=_needs_ssl,
         )
     }
 else:

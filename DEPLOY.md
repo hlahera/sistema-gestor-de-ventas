@@ -1,85 +1,52 @@
-# Desplegar ProducMarket en internet
+# Desplegar ProducMarket (Render + GitHub)
 
-La app tiene **dos partes** que debes publicar por separado:
+Tu código está en: **https://github.com/hlahera/sistema-gestor-de-ventas**
 
-| Parte | Carpeta | Ejemplo de hosting |
-|-------|---------|-------------------|
-| **API (Django)** | `producmarket/` | [Render](https://render.com) (gratis con límites) |
-| **Web (React)** | `producmarket-frontend-cra/` | [Vercel](https://vercel.com) o [Netlify](https://netlify.com) |
+## Paso único en Render (recomendado)
 
----
+1. Entra en [dashboard.render.com](https://dashboard.render.com)
+2. **New +** → **Blueprint**
+3. Conecta el repo `sistema-gestor-de-ventas` (rama `main`)
+4. Render detectará el archivo **`render.yaml`** en la raíz y creará:
+   - **producmarket-db** — PostgreSQL
+   - **producmarket-api** — Django (API)
+   - **producmarket-web** — React (sitio estático)
+5. Pulsa **Apply** y espera 10–15 minutos (plan gratuito).
 
-## 1. Backend en Render
+Al terminar tendrás dos URLs públicas:
 
-1. Sube el repo a **GitHub**.
-2. En Render: **New → Web Service** → conecta el repo.
-3. Configuración:
-   - **Root Directory:** `producmarket`
-   - **Build Command:** `./build.sh`
-   - **Start Command:** `gunicorn core.wsgi:application --bind 0.0.0.0:$PORT`
-   - **Instance type:** Free (o de pago si necesitas más)
+| Servicio | Uso |
+|----------|-----|
+| `https://producmarket-web.onrender.com` | Abre esta en el móvil (la app) |
+| `https://producmarket-api.onrender.com` | API (el frontend ya la usa sola) |
 
-4. Variables de entorno (Environment):
+### Crear usuario administrador
 
-   | Variable | Valor ejemplo |
-   |----------|----------------|
-   | `DEBUG` | `false` |
-   | `SECRET_KEY` | *(genera una clave larga aleatoria)* |
-   | `ALLOWED_HOSTS` | `producmarket-api.onrender.com` |
-   | `CORS_ALLOWED_ORIGINS` | `https://tu-app.vercel.app` |
-   | `CSRF_TRUSTED_ORIGINS` | `https://tu-app.vercel.app,https://producmarket-api.onrender.com` |
-   | `SECURE_SSL_REDIRECT` | `true` |
-   | `SERVE_MEDIA` | `true` |
+Cuando el API esté **Live**:
 
-5. **Disco persistente** (recomendado para fotos de productos): en Render añade un Disk montado en `media` (1 GB suele bastar al inicio). Puedes usar el blueprint `producmarket/render.yaml`.
-
-6. **PostgreSQL** (recomendado en producción): crea una base **PostgreSQL** en Render y enlaza `DATABASE_URL` al servicio web. Sin esto se usa SQLite (en plan gratis el archivo puede perderse al reiniciar).
-
-7. Tras el deploy, crea un admin:
+1. En Render → servicio **producmarket-api** → **Shell**
+2. Ejecuta:
    ```bash
-   # En Render → Shell del servicio
    python manage.py createsuperuser
-   python manage.py migrate
    ```
 
-Anota la URL del API, por ejemplo: `https://producmarket-api.onrender.com`
+### Plan gratuito
+
+- El servicio se **apaga** tras inactividad; la primera carga puede tardar ~1 minuto.
+- Las **fotos** subidas pueden perderse al redeployar (sin disco persistente en free). Para producción seria conviene disco o almacenamiento externo.
 
 ---
 
-## 2. Frontend en Vercel
-
-1. **New Project** → importa el mismo repo de GitHub.
-2. **Root Directory:** `producmarket-frontend-cra`
-3. **Framework:** Create React App
-4. Variables de entorno (antes del build):
-
-   | Variable | Valor |
-   |----------|--------|
-   | `REACT_APP_API_URL` | `https://producmarket-api.onrender.com/api` |
-   | `REACT_APP_MEDIA_URL` | `https://producmarket-api.onrender.com` |
-
-5. Deploy. La URL será algo como `https://producmarket.vercel.app`.
-
-6. Vuelve a Render y pon esa URL exacta en `CORS_ALLOWED_ORIGINS` y `CSRF_TRUSTED_ORIGINS`.
-
----
-
-## 3. Probar desde el móvil
-
-Abre en el navegador del teléfono la URL de Vercel (`https://...`). Debe cargar el login y conectar con el API por HTTPS.
-
----
-
-## Desarrollo local (sin cambios)
+## Desarrollo local
 
 ```bash
-# Terminal 1 – API
+# API
 cd producmarket
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py runserver
 
-# Terminal 2 – Web
+# Web
 cd producmarket-frontend-cra
 cp .env.example .env.local
 npm install
@@ -88,20 +55,11 @@ npm start
 
 ---
 
-## Copias de seguridad
+## Alternativa: Vercel (solo frontend) + Render (API)
 
-En producción guarda periódicamente:
+Si prefieres Vercel para la web, despliega solo `producmarket-api` en Render y en Vercel configura:
 
-- Base de datos (PostgreSQL desde Render, o copia de `db.sqlite3` si usas SQLite)
-- Carpeta `producmarket/media/` (imágenes de productos)
+- `REACT_APP_API_URL` = `https://producmarket-api.onrender.com/api`
+- `REACT_APP_MEDIA_URL` = `https://producmarket-api.onrender.com`
 
----
-
-## Checklist rápido
-
-- [ ] `DEBUG=false` en el servidor
-- [ ] `SECRET_KEY` única y secreta
-- [ ] CORS solo con la URL del frontend
-- [ ] `REACT_APP_*` configuradas en Vercel **antes** del build
-- [ ] Superusuario creado en el servidor
-- [ ] Disco persistente o PostgreSQL para no perder datos
+Y en Render API añade la URL de Vercel en `CORS_ALLOWED_ORIGINS`.
