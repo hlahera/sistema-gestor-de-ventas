@@ -22,13 +22,17 @@ Al terminar tendrás dos URLs públicas:
 
 ### Crear usuario administrador
 
-Cuando el API esté **Live**:
+En el plan **Free** de Render no hay Shell (terminal). Usa variables de entorno:
 
-1. En Render → servicio **producmarket-api** → **Shell**
-2. Ejecuta:
-   ```bash
-   python manage.py createsuperuser
-   ```
+1. **producmarket-api** → **Environment** → **Add Environment Variable**
+2. Añade (elige tu usuario y contraseña):
+   - `DJANGO_SUPERUSER_USERNAME` = por ejemplo `admin`
+   - `DJANGO_SUPERUSER_EMAIL` = tu correo
+   - `DJANGO_SUPERUSER_PASSWORD` = una contraseña segura
+3. **Manual Deploy** → **Deploy latest commit**
+4. Cuando el deploy termine, **borra** `DJANGO_SUPERUSER_PASSWORD` del entorno (opcional pero recomendado) y vuelve a desplegar.
+
+Solo se crea el admin la primera vez (si ya existe, el deploy lo ignora).
 
 ### Plan gratuito
 
